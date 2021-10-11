@@ -1,0 +1,705 @@
+---
+title: "snag-wlf_rf-mod"
+author: "Jess M. Stitt"
+date: "9/17/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# **1. Set up the workspace**
+Pre-processing and organization of materials needed to run the code, including R packages, folder & file pathways, and relevant datasets
+## *1.1. Load packages for workflow organization & tidy data*
+```{r library}
+##--------------------------------------------------------------------------##
+## Workflow organization ----
+##--------------------------------------------------------------------------##
+library(here)       #for file path mgmt
+library(beepr)      #for [unnecessary] sound notifications
+##--------------------------------------------------------------------------##
+## Tidy data management ----
+##--------------------------------------------------------------------------##
+library(tidyverse)  #for tidy data
+library(dplyr)      #for
+library(tidyr)      #for
+library(stringr)    #for
+##--------------------------------------------------------------------------##
+## Spatial manipulation ----
+##--------------------------------------------------------------------------##
+library(raster)
+library(rgdal) #for vector work
+library(raster) #for metadata/attributes: vectors or rasters
+library(rgeos)
+library(sf)
+library(sp)
+##--------------------------------------------------------------------------##
+## Data visualization & plotting ----
+##--------------------------------------------------------------------------##
+library(ggplot2)    #for plots & graphics
+library(gridExtra)
+library(ggpubr)     #for ggplot-based publication-ready plots & other visuals
+library(ggsci)
+library(RColorBrewer)   #for color palettes
+##--------------------------------------------------------------------------##
+## Modeling ----
+##--------------------------------------------------------------------------##
+library(randomForest) #Random Forest modeling
+# devtools::install_github("MI2DataLab/randomForestExplainer")
+library(randomForestExplainer) #explainer for RF models
+library(rfUtilities)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(corrplot)
+library(rstatix)
+library(rsample)
+##--------------------------------------------------------------------------##
+beep(1) #----
+```
+## *1.2. Assign project file pathways*
+```{r pathways}
+##--------------------------------------------------------------------------##
+## INPUTS: existing datasets ----
+##--------------------------------------------------------------------------##
+csv <- here("01_datasets", "01_csv")    #field data files (as comma-separated)
+laspc <- here("01_datasets", "02_las")  #lidar point cloud files
+gis <- here("01_datasets", "03_gis")    #geospatial data files
+##--------------------------------------------------------------------------##
+## PROCESSING: R scripts and steps for project ----
+##--------------------------------------------------------------------------##
+### Code used to perform analyses
+scripts <- here("02_scripts")           #R scripts
+### Lidar progression
+rawlas <- here(laspc,"00_las_raw_r50m")   
+znf <- here(laspc,"01_las_znfil_r50m")       #znorm filtered (>0, C==1L) R50m
+clipPlot <- here(laspc,"02_las_clip-plot_r25m") #lasclipCircle from znf to R25m
+clipTree <- here(laspc,"03_las_clip-tree") #lasclipCircle from znf to 5x5m
+clipSnag <- here(clipTree,"circular_d05m/snag-gnss") #field-derived snag PCs
+### Raster progression
+dtm50m <- here(gis,"00_tif_dtm_r50m")
+pfc <- here(gis,"01_tif_pf-chm_r50m")   #pit-free chm R50m around plots
+chm50m <- here(gis,"02_asc_pf-chm_r50m")      #chm raster R50m around plots
+chmPlot <- here(gis,"03_asc_chm-plot_r25m")       #chm raster from chm to R25m
+shp25m <- here(gis, "04_shp_plots-clip_r25m")
+##--------------------------------------------------------------------------##
+## OUTPUTS: products generated during processing ----
+##--------------------------------------------------------------------------##
+tabs <- here("03_results", "01_tables") #results tables (as .csvs)
+lasmx <- here("03_results", "02_las-metrics") #lidar-derived metrics
+shp <- here("03_results", "03_gis-mod")  #shapefiles (modified)
+figs <- here("03_results", "04_graphics") #graphic outputs
+##--------------------------------------------------------------------------##
+beep(2)  #----
+##--------------------------------------------------------------------------##
+```
+
+# **2. ALS processing**
+Using the height-normalized airborne laser scanning (ALS) point clouds with a 50m-radius, centered on the survey plot centers, all snags per 25m-radius survey plot were clipped
+
+[NOTE: for this project, the lidar data has not been included but the code shows how the ALS point clouds were processed and the specific lidar metrics were calculated]
+## *2.1. Clip LAS around individual snags*
+```{r lasproc}
+##--------------------------------------------------------------------------##
+## Lidar-specific packages ----
+##--------------------------------------------------------------------------##
+## **If not yet installed, first install with devtools
+# library(devtools) #for pkg maintenance [developer tools]
+# devtools::install_github("carlos-alberto-silva/rLiDAR")
+library(rLiDAR)     #for lidar data manipulation & ITD**
+# devtools::install_github("Jean-Romain/lidR")
+library(lidR)     #for lidar data manipulation**
+##--------------------------------------------------------------------------##
+##--------------------------------------------------------------------------##
+## Clip height-normalized las point clouds around each snag (size TBD) ----
+##--------------------------------------------------------------------------##
+list_snagClips_d05m <- vector("list", nsnags) 
+for(i in 1:length(snagNames)){
+    plotZNF_tmp <- paste0(znf, "/",  #file path to las for plot ID in snag i
+                          str_sub(snagNames[[i]], end = -6), "_znf.las")
+    plotZNF <- lidR::readLAS(plotZNF_tmp)   #read in znorm r50m point cloud
+    tmpSNAG <- lidR::clip_circle(plotZNF,
+                                 snag_chars$xc[[i]],
+                                 snag_chars$yc[[i]],
+                                 radius = 2.5)
+    list_snagClips_d05m[[i]] <- tmpSNAG
+    writeLAS(tmpSNAG, paste0(clipSnag, "/",
+                             str_sub(snagNames[[i]]), ".las")) #write to file
+}; beep(2)
+names(list_snagClips_d05m) <- paste0(snagNames) #include snag IDs for ref
+##--------------------------------------------------------------------------##
+## Catalog and inspect created files ----
+##--------------------------------------------------------------------------##
+ctgSNAG <- readLAScatalog(clipSnag) #catalog all files in folder
+lidR:::catalog_laxindex(ctgSNAG)    #index all files & create lax files
+las_check(ctgSNAG)                  #check files
+plot(ctgSNAG, mapview=T)            #view clips on a map
+##--------------------------------------------------------------------------##
+beep(1) #----
+##--------------------------------------------------------------------------##
+```
+## *2.2. Calculate lidar metrics from individual snag point clouds*
+```{r lasmx}
+##--------------------------------------------------------------------------##
+## Calculate "standard" lidar metrics (via lidR) for all returns ----
+##--------------------------------------------------------------------------##
+## Create list of all clips of lidar point clouds around snags
+snagLAS_list <- list.files(paste0(clipSnag, "/"), pattern="*.las")
+## Iterate through list: read, process, calculate metrics
+snagMx_lidr <- lapply(snagLAS_list, function(file) {
+    las <- lidR::readLAS(paste0(clipSnag,"/",file))
+    las <- filter_poi(las, Z>=1.37) #set min.ht to breast height (dbh)
+    lidR::cloud_metrics(las, .stdmetrics)
+})
+snagMx_d <- data.table::rbindlist(snagMx_lidr)
+snagMx_t <- as_tibble(cbind(snagid=c(snagNames), snagMx_d)) %>%
+    select(-c(38:49)) %>% #remove intensity metrics... not calibrated
+    mutate(ptd = n / 25, #standardize to point density (=returns per meter)
+           zcv = zmean / zsd)
+glimpse(snagMx_t)
+## Save to file
+# write_csv(snagMx_t, file.path(lasmx,
+#                               "snag-trem_REFsnags-d05m_cloudMx-allRN.csv"))
+##--------------------------------------------------------------------------##
+## Set up additional structural metrics, altered from existing methods ----
+##--------------------------------------------------------------------------##
+## Calculate gap fraction profile (derived from lidR::gap_fraction_profile):
+gap_frac_prof_jstitt <- function (z, dz = 1, z0 = 1) 
+{
+    bk <- seq(z0,
+              ceiling(max(z) + z0), 
+              dz)
+    if (length(bk) <= 1) 
+        return(data.frame(z = numeric(0), gf = numeric(0)))
+    histogram <- graphics::hist(z, breaks = bk, plot = F)
+    h <- histogram$mids
+    p <- histogram$counts/sum(histogram$counts)
+    p <- c(p, 0)
+    cs <- cumsum(p)
+    i <- data.table::shift(cs)/cs
+    i[is.na(i)] = 0
+    i[is.nan(i)] = NA
+    z = h
+    i = i[-length(i)]
+    return(na.omit(data.frame(z = z[z > z0], gf = i[z > z0])))
+}
+## Calculate structural methods (derived from LaRue et al. 2020**): 
+##   ** Based on a tutorial found at: https://www.neonscience.org/resources/
+##      learning-hub/tutorials/structural-diversity-discrete-return
+strMx_jstitt <- function(lasroi) {
+    Zs <- tmpLAS@data$Z
+    Zs <- Zs[!is.na(Zs)]
+    if(length(Zs)>28) {
+    chm <- grid_canopy(lasroi, res = 1, dsmtin())
+    rumple <- rumple_index(chm)
+    top.rugosity <- sd(chm@data@values, na.rm = TRUE)
+    cells <- length(chm@data@values)
+    chm.0 <- chm
+    chm.0[is.na(chm.0)] <- 0
+    zeros <- which(chm.0@data@values == 0)
+    deepgaps <- length(zeros)
+    deepgap.fraction <- deepgaps/cells
+    cover.fraction <- 1 - deepgap.fraction
+    entropy_mid <- entropy(Zs, by = 1, zmax = 20) 
+    gap_frac <- gap_frac_prof_jstitt(Zs, dz = 1, z0 = 1.37)
+    GFP <- mean(gap_frac$gf, na.rm = TRUE)
+    GFP_mid <- mean(gap_frac$gf[gap_frac$z <= 20])
+    LADen <- LAD(Zs, dz = 2, k=0.5, z0=2) 
+    LADm <- mean(LADen$lad, na.rm=TRUE)
+    LADsd <- sd(LADen$lad, na.rm=TRUE)
+    LADcv <- LADm/LADsd
+    VAI <- sum(LADen$lad, na.rm=TRUE) 
+    VCI <- VCI(Zs, by = 1, zmax=80) 
+    out.plot <- data.frame(
+        matrix(c(rumple, top.rugosity, deepgap.fraction, cover.fraction, 
+                 entropy_mid, GFP, GFP_mid,
+                 LADm, LADcv, VAI, VCI),
+            ncol = 11)) 
+    colnames(out.plot) <- 
+        c("rumple", "top.rugosity", "deepgap.fraction", "cover.fraction",
+          "ENTmid", "GFPall", "GFPmid",
+          "LADm", "LADcv", "VAI", "VCI") 
+    print(out.plot)
+    } else {
+        vals <- rep(NA, times = 11)
+        out.plot <- data.frame(
+            matrix(vals, ncol=11, nrow=1, byrow=FALSE))
+    colnames(out.plot) <- 
+        c("rumple", "top.rugosity", "deepgap.fraction", "cover.fraction",
+          "ENTmid", "GFPall", "GFPmid",
+          "LADm", "LADcv", "VAI", "VCI") 
+    print(out.plot)
+    }
+}
+##--------------------------------------------------------------------------##
+## Calculate structural metrics for all returns ----
+##--------------------------------------------------------------------------##
+strMetrics_allRN = list()
+for(i in 1:length(snagNames)){
+    snagLAS_tmp <- paste0(clipSnag, "/", 
+                          str_sub(snagNames[[i]]), ".las")
+    tmpLAS <- lidR::readLAS(snagLAS_tmp, 
+                            filter = "-drop_z_below 1.37")
+    tmpMX <- strMx_jstitt(tmpLAS) 
+    strMetrics_allRN[[i]] <- tmpMX
+}
+snagStrMx_allRN <- data.table::rbindlist(strMetrics_allRN)
+snagMx_str <- as_tibble(cbind(snagid=c(snagNames), snagStrMx_allRN)) %>%
+    tidyr::drop_na(rumple)
+glimpse(snagMx_str)
+## Save to file
+# write_csv(snagMx_str, file.path(lasmx, 
+#                                 "snag-trem_REFsnags-d05m_structMx-allRN.csv"))
+##--------------------------------------------------------------------------##
+## Combine all metrics and snag characteristics for evaluation ----
+##--------------------------------------------------------------------------##
+## Combine standard & structural metrics
+snagStr_returns <- full_join(snagMx_t, snagMx_str, by="snagid")
+## Combine all metrics with snag characteristics (from field data)
+snag_lasmx <- inner_join(snag_chars, snagStr_returns, by="snagid") %>% 
+    drop_na(c(dbh,top)) 
+snagMx <- snag_lasmx %>%
+    select(-c(3:5,9,10,63)) %>%
+    tidyr::drop_na(rumple); snagMx
+## Save to file
+# write_csv(snagMx, file.path(lasmx,
+#                             "snag-trem_REFsnags-d05m_lasMx-allRN_full.csv"))
+##--------------------------------------------------------------------------##
+beep(3) #----
+##--------------------------------------------------------------------------##
+```
+## *2.3. Add in topographic information clipped from DEM for each snag*
+```{r demtopo}
+##--------------------------------------------------------------------------##
+## Read in raw PCs to generate DTMs for topo (R50m) ----
+##--------------------------------------------------------------------------##
+ctgROI <- lidR::readLAScatalog(rawlas)    #catalog raw las, R50m plots
+opt_independent_files(ctgROI) <- TRUE
+lidR:::catalog_laxindex(ctgROI)     #index all files & create lax files
+las_check(ctgROI)
+##--------------------------------------------------------------------------##
+## DEM for REF plots (R50m) ----
+##--------------------------------------------------------------------------##
+opt_output_files(ctgROI) <- (paste0(dtm50m,"/{*}_dtm"))
+ctgDTM <- lidR::grid_terrain(ctgROI, 20, algorithm = tin())
+opt_independent_files(ctgDTM) <- TRUE
+##--------------------------------------------------------------------------##
+## Use raster::terrain to calculate slope and aspect ----
+##--------------------------------------------------------------------------##
+dtm_slope <- terrain(ctgDTM, opt = "slope")
+dtm_aspect <- terrain(ctgDTM, opt = "aspect", unit="degrees")
+##--------------------------------------------------------------------------##
+## Extract topo features at survey plot scale (circular 25m radius) ----
+##--------------------------------------------------------------------------##
+## Average slope
+avgslope <- raster::extract(dtm_slope,
+  sp, 
+  buffer=25,
+  fun=mean,
+  na.rm=TRUE, 
+  df=TRUE)
+## Convert degrees of slope into percentage of slope: 
+#   Tan(Slope-in-degrees * Pi/180)
+## Convert slope in percentage to slope in degrees:
+#   Atan(slope-in-percent)*180/Pi
+
+## Average aspect
+avgasp <- raster::extract(dtm_aspect,
+  sp,
+  buffer=25,
+  fun=mean, 
+  na.rm=TRUE, 
+  df=TRUE)
+
+## Transformed aspect (TrAsp)
+trasp <- function(x) { (1 - cos( (pi/180) * (x - 30)) ) / 2 }
+options("scipen"=10, "digits"=2)
+dtm_trasp <- as_tibble(trasp(avgasp$aspect)) %>% 
+  rename(trasp = value)
+
+## Also extract elevation averaged at the plot scale (circular 25m radius)
+avgelev <- raster::extract(ctgDTM,
+  sp,
+  buffer=25,
+  fun=mean, 
+  na.rm=TRUE,
+  df=TRUE)  
+##--------------------------------------------------------------------------##
+## Combine all topo features ----
+##--------------------------------------------------------------------------##
+tidytopo <- dtm_trasp %>% 
+  add_column(plotid = plots$plotid, .before = "trasp") %>% 
+  add_column(as_tibble(avgslope)) %>% select(-"ID") %>% 
+  add_column(as_tibble(avgelev), .before = "trasp") %>% 
+  select(-"ID") %>% 
+  rename(elev = BR210A_dtm)
+## Save file
+# write_csv(tidytopo, file.path(tabs,
+#                               "snag-trem_REFplots_topo-r25m.csv"))
+##--------------------------------------------------------------------------##
+beep(10) #----
+##--------------------------------------------------------------------------##
+```
+
+# **3. Random Forest Modeling**
+## *3.1. Read in datasets (if not processed in situ per section 2 above)*
+```{r readr}
+##--------------------------------------------------------------------------##
+## Load relevant csv files ----
+##--------------------------------------------------------------------------##
+## Load csv with all lidar metrics and snag characteristics
+snagDF <- read_csv(file.path(lasmx,
+                             "snag-trem_REFsnags-d05m_lasMx-allRN_full.csv"))
+## Modify for model processing
+snagMOD <- as_tibble(snagDF) %>% 
+  mutate_at(vars(site, spp, top:insects), factor) %>%
+  reorder_levels(bark, c("NONE","SOME","FULL")) %>%
+  reorder_levels(branches, c("N","C","M","F","V")) %>% #None,Coarse,Mid,Fine,Veg
+  mutate(overcanopy = zmax - ht) %>%
+  mutate(cat=cut(dbh, breaks=c(0, 0.4, 2), 
+                 labels=c("small","large"))) %>%
+  mutate(group = case_when(
+    cat == "small" & top == "INTACT" ~ "SI",
+    cat == "large" & top == "INTACT" ~ "LI",
+    cat == "small" & top == "BT" ~ "SB",
+    cat == "large" & top == "BT" ~ "LB"),
+    .after=site) %>%
+  mutate(crown = case_when(
+    branches == "N" | branches == "C" ~ "NO",
+    branches == "M" | branches == "F" | branches == "V" ~ "YES"),
+    .after=group) %>%
+  mutate_at(vars(group, crown), factor) %>% 
+  rstatix::reorder_levels(group, c("SI","LI","SB","LB"))
+## Add column on plot ID, derived from snag IDs
+snags <- snagMOD %>%
+  separate(snagid, c("plotid"), sep = "_", remove=FALSE, extra="drop") %>%
+  relocate(plotid, .after = "site")
+## Load csv of topo metrics 
+tidytopo <- read_csv(file.path(tabs, "snag-trem_REFplots_topo-r25m.csv"))
+## Combine all files for use in Random Forest (RF) modeling
+snagRF <- full_join(snags, tidytopo, by = "plotid") %>%
+  relocate(c(elev, trasp, slope), .after = "z_m") %>%
+  drop_na(snagid)
+glimpse(snagRF)
+##--------------------------------------------------------------------------##
+## Inspect summary stats by snag class (by diameter and intactness) ----
+##--------------------------------------------------------------------------##
+snagRF %>%
+    group_by(group) %>%
+    summarize(n())
+summstat <- snagRF[,c("group","ptd","p1th","p2th","p3th", "n",
+                    "GFPmid","LADcv","rumple","ENTmid","VAI","VCI",
+                    "elev","trasp","slope")] %>% 
+  tidyr::drop_na() %>% 
+  group_by(group) %>%
+  summarise(mean(n), sd(n)); summstat
+##--------------------------------------------------------------------------##
+beep(2) #----
+```
+## *3.2. Set up model parameters*
+(RF modeling approach adapted from: 
+https://daviddalpiaz.github.io/r4sl/ensemble-methods.html#classification-2)
+```{r rf-setup}
+##--------------------------------------------------------------------------##
+## Setup vars for RF modeling to classify all snags by GROUP ----
+##--------------------------------------------------------------------------##
+grpVars <- snagRF[,c("group","ptd","p1th","p2th","p3th",
+                    "GFPmid","LADcv","rumple","ENTmid","VAI","VCI",
+                    "elev","trasp","slope")] %>% 
+    rename(c(ptDen = ptd,
+             p1stRN = p1th,
+             p2ndRN = p2th,
+             p3rdRN = p3th
+             )) %>%
+    tidyr::drop_na(); glimpse(grpVars)
+grpVars %>%
+    group_by(group) %>%
+    summarize(n())
+##--------------------------------------------------------------------------##
+## Test for model collinearity across predictor variables ----
+##--------------------------------------------------------------------------##
+rfUtilities::multi.collinear(grpVars[,-1], na.rm=TRUE, perm=TRUE,
+                             leave.out=TRUE, n=999, p=0.001)
+rfCor <- round(cor(grpVars[,-1], method="pearson", use="all.obs"), 
+               digits=2) #Pearson correlations
+corrplot(rfCor, method="number", tl.col="black", type="upper")
+##--------------------------------------------------------------------------##
+## Setup vars for RF modeling split by size class ----
+##--------------------------------------------------------------------------##
+sizeVars <- snagRF[,c("group","top","ptd","p1th","p2th","p3th",
+                    "GFPmid","LADcv","rumple","ENTmid","VAI","VCI",
+                    "elev","trasp","slope")] %>% 
+    rename(c(ptDen = ptd,
+             p1stRN = p1th,
+             p2ndRN = p2th,
+             p3rdRN = p3th
+             )) %>%
+    tidyr::drop_na(); glimpse(sizeVars)
+##--------------------------------------------------------------------------##
+## Split data by size class for RF modeling of small & large snags only ----
+##--------------------------------------------------------------------------##
+snagSM <- subset(sizeVars, group == "SI" | group == "SB") %>%
+  select(-group)
+snagLG <- subset(sizeVars, group == "LI" | group == "LB") %>%
+  select(-group)
+nrow(snagSM); nrow(snagLG) #inspect split by size
+##--------------------------------------------------------------------------##
+beep(10) #----
+##--------------------------------------------------------------------------##
+```
+## *3.3. Build and test RF model across multiple iterations*
+```{r rf-all}
+##--------------------------------------------------------------------------##
+## Create containers for compiling results of RF model iterations ----
+##--------------------------------------------------------------------------##
+rfb_grp = list(); imp_grp = list(); prd_grp = list(); cMx_grp = list()
+prop_grp_df = data.frame(); imp_grp_df=data.frame(); cM_grp_df = data.frame()
+##--------------------------------------------------------------------------##
+## Run RF model over 20 iterations ----
+##--------------------------------------------------------------------------##
+set.seed(588)
+for (i in 1:20){
+  ## Generate randomly split subsets for model testing and validation
+  rf_split_grp <- rsample::initial_split(grpVars, prop = 0.6) #randomly sample
+  rf_train_grp <- training(rf_split_grp) #assign training data subset
+  rf_vtest_grp <- testing(rf_split_grp)  #assign validation/testing data subset
+  prop_train_grp <- prop.table(table(rf_train_grp$group)) #look at groups dist.
+  prop_grp_df <- rbind(prop_train_grp, prop_grp_df)
+  ## Run RF on training data subset
+  rfb_grp[[i]] <- randomForest(group ~ .,
+                      data = rf_train_grp, 
+                      ntree = 1000,
+                      mtry = 13, #set to all preds = bagging (vs rf only)
+                      importance = TRUE)
+  imp_grp <- importance(rfb_grp[[i]]) #look at variable importance from model
+  mir_grp <- round(imp_grp[,6]/max(imp_grp[,6]), digits=2) #MIR for mdGini 
+  imp_grp_df <- rbind(imp_grp_df, mir_grp)
+  ## Use RF model results to predict classes for testing data subset
+  prd_grp[[i]] <- predict(rfb_grp[[i]], newdata = rf_vtest_grp)
+  ## Evaluate how well RF model performs classification prediction
+  cMx_grp[[i]] <- caret::confusionMatrix(prd_grp[[i]], rf_vtest_grp$group)
+  cM_grp_df <- rbind(cM_grp_df, cMx_grp[[i]]$overall)
+}
+##--------------------------------------------------------------------------##
+## Summarize results across iterations into tables ----
+##--------------------------------------------------------------------------##
+RFnames <- as_tibble(sprintf("iter_%02d", 1:20)) #label iteration number
+colnames(prop_grp_df)<-c("prop(SI)", "prop(LI)","prop(SB)", "prop(LB)")
+## Comparisons of RF evaluation among iterations
+colnames(cM_grp_df)<-c("Accuracy","Kappa","AccLowerCI",
+                       "AccUpperCI","AccNull","AccPValue","McNemarPValue")
+iterRF_grp <- cbind(RFnames,
+                    round(prop_grp_df, digits=2),
+                    round(cM_grp_df[,c(1,2,6,7)], digits=3)) %>%
+    arrange(desc(Kappa))
+head(iterRF_grp)
+## Comparisons of standardized variable importance scores among iterations
+colnames(imp_grp_df)<-c("ptDen","p1stRN","p2ndRN","p3rdRN","GFPmid","LADcv",
+                        "rumple","ENTmid","VAI","VCI","elev","trasp","slope")
+mirRF_grp <- cbind(RFnames,imp_grp_df) 
+rankMIR_grp <- mirRF_grp[-1] %>%
+  mutate_all(as.numeric) %>%
+  summarise(across(.cols = everything(), mean))  %>%
+  gather() 
+rankMIR_grp %>% arrange(desc(value))
+##--------------------------------------------------------------------------##
+## Inspect "best" RF model iteration (via overall acc & Kappa values) ----
+##--------------------------------------------------------------------------##
+(grps_best <- rfb_grp[[04]])
+(grps_cM <- cMx_grp[[04]])
+## Look at variable importance results for best RF model
+par(mfrow=c(1,1))
+varImpPlot(grps_best, main="Variable Importance Measures for top RF model ")
+plot(grps_best)
+randomForest::importance(grps_best)[,1:4]
+round(importance(grps_best)[,1:4]/max(abs(importance(grps_best)[,1:4])),
+      digits=2)  #MIR for classes
+##--------------------------------------------------------------------------##
+beep(8) #----
+##--------------------------------------------------------------------------##
+```
+## *3.4. Build and test RF model across multiple iterations*
+```{r rfb-byDiameter}
+##--------------------------------------------------------------------------##
+## Subset of small snags only (<40cm DBH) ----
+##--------------------------------------------------------------------------##
+## Create containers for compiling results of RF model iterations
+rfb_sm = list(); imp_sm = list(); prd_sm = list(); cMx_sm = list()
+prop_sm_df = data.frame(); imp_sm_df = data.frame(); cM_sm_df = data.frame()
+## Run RF model over 20 iterations
+set.seed(588)
+for (i in 1:20){
+  rf_sm_split <- initial_split(snagSM, prop = 0.6)
+  rf_sm_train <- training(rf_sm_split)
+  rf_sm_vtest <- testing(rf_sm_split)
+  prop_sm_train <- prop.table(table(rf_sm_train$top))
+  prop_sm_df <- rbind(prop_sm_df, prop_sm_train)
+  print(prop.table(table(rf_sm_train$top)))
+  rfb_sm[[i]] <- randomForest(top ~ .,
+                      data = rf_sm_train, 
+                      ntree = 1000,
+                      mtry = 14, 
+                      importance = TRUE)
+  imp_sm <- importance(rfb_sm[[i]])
+  mir_sm <- round(imp_sm[,4]/max(imp_sm[,4]),
+                        digits=2)
+  imp_sm_df <- rbind(imp_sm_df, mir_sm)
+  prd_sm[[i]] <- predict(rfb_sm[[i]], newdata = rf_sm_vtest)
+  cMx_sm[[i]] <- caret::confusionMatrix(prd_sm[[i]], rf_sm_vtest$top)
+  cM_sm_df <- rbind(cM_sm_df, cMx_sm[[i]]$overall)
+  print(i)
+}
+## Summarize results across iterations into tables
+RFnames <- as_tibble(sprintf("iter_%02d", 1:20))
+## Comparisons of RF evaluation among iterations
+colnames(prop_sm_df)<-c("prop(BT)", "prop(INTACT)")
+colnames(cM_sm_df)<-c("Accuracy","Kappa","AccLowerCI",
+                       "AccUpperCI","AccNull","AccPValue","McNemarPValue")
+iterRF_sm <- cbind(RFnames,
+                    round(prop_sm_df, digits=2),
+                    round(cM_sm_df[,c(1,2,6,7)], digits=3)) %>%
+    arrange(desc(Kappa)); head(iterRF_sm)
+## Comparisons of standardized variable importance scores among iterations
+colnames(imp_sm_df)<-c("ptDen","p1stRN","p2ndRN","p3rdRN","GFPmid","LADcv",
+                        "rumple","ENTmid","VAI","VCI","elev","trasp","slope")
+mirRF_sm <- cbind(RFnames,imp_sm_df) 
+rankMIR_sm <- mirRF_sm[-1] %>%
+  mutate_all(as.numeric) %>%
+  summarise(across(.cols = everything(), mean))  %>%
+  gather() %>% arrange(desc(value)); rankMIR_sm
+## Inspect "best" RF model iteration (via overall acc & Kappa values)
+(sm_best <- rfb_sm[[15]])
+(grps_cM <- cMx_sm[[15]])
+importance(sm_best)
+importance(sm_best)/max(abs(importance(sm_best)[,1:2]))
+varImpPlot(sm_best)
+##--------------------------------------------------------------------------##
+## Subset of large snags only (≥40cm DBH) ----
+##--------------------------------------------------------------------------##
+## Create containers for compiling results of RF model iterations
+rfb_lg = list(); imp_lg = list(); prd_lg = list(); cMx_lg = list()
+prop_lg_df = data.frame(); imp_lg_df = data.frame(); cM_lg_df = data.frame()
+## Run RF model over 20 iterations 
+set.seed(588)
+for (i in 1:20){
+  rf_lg_split <- initial_split(snagLG, prop = 0.6)
+  rf_lg_train <- training(rf_lg_split)
+  rf_lg_vtest <- testing(rf_lg_split)
+  prop_lg_train <- prop.table(table(rf_lg_train$top))
+  prop_lg_df <- rbind(prop_lg_df, prop_lg_train)
+  print(prop.table(table(rf_lg_train$top)))
+  rfb_lg[[i]] <- randomForest(top ~ .,
+                      data = rf_lg_train, 
+                      ntree = 1000,
+                      mtry = 14, 
+                      importance = TRUE)
+  imp_lg <- importance(rfb_lg[[i]])
+  mir_lg <- round(imp_lg[,4]/max(imp_lg[,4]),
+                        digits=2)
+  imp_lg_df <- rbind(imp_lg_df, mir_lg)
+  prd_lg[[i]] <- predict(rfb_lg[[i]], newdata = rf_lg_vtest)
+  cMx_lg[[i]] <- caret::confusionMatrix(prd_lg[[i]], rf_lg_vtest$top)
+  cM_lg_df <- rbind(cM_lg_df, cMx_lg[[i]]$overall)
+  print(i)
+}
+## Summarize results across iterations into tables 
+RFnames <- as_tibble(sprintf("iter_%02d", 1:20))
+## Comparisons of RF evaluation among iterations
+colnames(prop_lg_df)<-c("prop(BT)", "prop(INTACT)")
+colnames(cM_lg_df)<-c("Accuracy","Kappa","AccLowerCI",
+                       "AccUpperCI","AccNull","AccPValue","McNemarPValue")
+iterRF_lg <- cbind(RFnames,
+                    round(prop_lg_df, digits=2),
+                    round(cM_lg_df[,c(1,2,6,7)], digits=3)) %>%
+  arrange(desc(Kappa)); head(iterRF_lg)
+## Comparisons of standardized variable importance scores among iterations
+colnames(imp_lg_df)<-c("ptDen","p1stRN","p2ndRN","p3rdRN","GFPmid","LADcv",
+                        "rumple","ENTmid","VAI","VCI","elev","trasp","slope")
+mirRF_lg <- cbind(RFnames,imp_lg_df) 
+rankMIR_lg <- mirRF_lg[-1] %>%
+  mutate_all(as.numeric) %>%
+  summarise(across(.cols = everything(), mean))  %>%
+  gather() %>% arrange(desc(value)); rankMIR_lg
+## Inspect "best" RF model iteration (via overall acc & Kappa values)
+(lg_best <- rfb_lg[[09]])
+(grps_cM <- cMx_lg[[09]])
+importance(lg_best)
+importance(lg_best)/max(abs(importance(lg_best)[,1:2]))
+varImpPlot(lg_best)
+##--------------------------------------------------------------------------##
+## Compare MIR-adj mdGini across all 3 models ----
+##--------------------------------------------------------------------------##
+MIR_all <- full_join(rankMIR_grp, rankMIR_sm, by = "key") %>%
+  full_join(rankMIR_lg, by = "key")
+colnames(MIR_all) <- c("pred.var","RF.all","RF.sm","RF.lg")
+MIR_all %>% arrange(desc(RF.all))
+##--------------------------------------------------------------------------##
+beep(5) #----
+##--------------------------------------------------------------------------##
+```
+## *3.5. Visualize the results of the Random Forest*
+``` {r rfExplainer-plots}
+##--------------------------------------------------------------------------##
+## Process graphics for RF model of choice ----
+##--------------------------------------------------------------------------##
+## Set focal RF model (shown = top model for RF-all)
+rfMod <- grps_best
+## Make list of file names 
+figList = c("1-min-depth","2-mw-imp","3-intrxns","4-pred")
+## Set up plots
+mdf <- min_depth_distribution(rfMod)
+impf <- measure_importance(rfMod)
+impvars <- important_variables(impf, k = 5,
+                    measures = c("mean_min_depth", "no_of_trees"))
+intx <- min_depth_interactions(rfMod, impvars)
+## Generate plots of interest
+mindepth <- plot_min_depth_distribution(mdf)
+mindepth
+
+mwImp <- plot_multi_way_importance(impf, size_measure = "no_of_nodes")
+mwImp
+
+intrxns <- plot_min_depth_interactions(intx)
+intrxns
+
+predIntrxn <- plot_predict_interaction(rfMod, grpVars, "p3rdRN", "slope")
+predIntrxn
+
+plotList = list(mindepth,mwImp,intrxns,predIntrxn)
+## Save plots to png; make a separate file for each plot.
+# for (i in 1:4) {
+#   file_name = file.path(figs, paste("snag-trem_rfbGRP-40cm-report_fig", 
+#                                       figList[[i]], ".png", sep=""))
+#   png(file_name,
+#       width = 800,
+#       height = 600)
+#   print(plotList[i])
+#   dev.off()
+# }
+##--------------------------------------------------------------------------##
+## Compile a report of all graphics ----
+##--------------------------------------------------------------------------##
+explain_forest(rfMod, interactions = TRUE, data = grpVars,
+               path=file.path(figs,
+                              "snag-trem_RF-explainer_rfbGRP-40cm.html"))
+##--------------------------------------------------------------------------##
+## Set up partition-based tree models ----
+##--------------------------------------------------------------------------##
+(tree.grps = rpart(group ~ ., data = grpVars)); printcp(tree.grps)
+plot(tree.grps); text(tree.grps, use.n = TRUE)
+####
+## Generate classification tree for just the training data
+snag_part = rpart(group ~ ., data = rf_train_grp)
+rpart.plot(snag_part)
+## 
+snag_part_pred = predict(snag_part, rf_vtest_grp, type = "class")
+table(predicted = snag_part_pred, actual = rf_vtest_grp$group)
+calc_acc = function(actual, predicted) {mean(actual == predicted)}
+(part_acc = calc_acc(predicted = snag_part_pred, actual = rf_vtest_grp$group))
+caret::confusionMatrix(snag_part_pred, rf_vtest_grp$group)
+##--------------------------------------------------------------------------##
+beep(4) #----
+##--------------------------------------------------------------------------##
+```
