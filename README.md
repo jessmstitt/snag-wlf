@@ -55,7 +55,7 @@ This research was funded in part by the NSF Idaho EPSCoR Program and the NASA Id
 **1.2.  snag-wlf_REFplots_ipnf2017.csv**
 		A spreadsheet (.csv) with information on the 25m-radius survey plots that served as the basis of field data collection.
 		
-**1.3.  snag-wlf_REFsnags_ipnf2017.csv
+**1.3.  snag-wlf_REFsnags_ipnf2017.csv**
 		A spreadsheet (.csv) with information on the individual snags within survey plots, including spatial coordinates, structural features, and additional wildlife-relevant features.
 		
 **1.4.  snag-wlf_REFplots_topo-r25m.csv**
