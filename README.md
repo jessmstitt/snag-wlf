@@ -4,7 +4,7 @@
 
 **This repository contains the datasets and code for evaluating the use of lidar to discern snag characteristics important for wildlife: Can we remotely classify snags into structural groups based on treetop intactness & DBH?**
 
-GENERAL INFORMATION
+*GENERAL INFORMATION*
 
 1. Title of Dataset: 
 “Data for: Evaluating the use of lidar to discern snag characteristics important for wildlife.” <In preparation for Remote Sensing, 2021>
@@ -25,7 +25,7 @@ Idaho Panhandle National Forest, Idaho, USA
 5. Information about funding sources that supported the collection of the data: 
 This research was funded in part by the NSF Idaho EPSCoR Program and the NASA Idaho Space Grant Consortium, and by a NASA Carbon Monitoring Systems (CMS) Program Award (NNH15AZ06I).
 
-SHARING/ACCESS INFORMATION
+*SHARING/ACCESS INFORMATION*
 
 1. Licenses/restrictions placed on the data: None
 
@@ -45,26 +45,26 @@ SHARING/ACCESS INFORMATION
 	Stitt, J.M.; Hudak, A.T.; Silva, C.A.; Vierling, L.A.; Vierling, K.T. (In prep). 
 		Data for: Evaluating the use of lidar to discern snag characteristics 				important for wildlife. Remote Sensing.
 
-DATA & FILE OVERVIEW
+*DATA & FILE OVERVIEW*
 
 1. File List: 
 
-**1.1.  snag-wlf_README.xlsx 
+**1.1.  snag-wlf_README.xlsx** 
 		A spreadsheet (.xlsx) describing all columns in each of the four (4) .csv files included with this project.
 		
-**1.2.  snag-wlf_REFplots_ipnf2017.csv
+**1.2.  snag-wlf_REFplots_ipnf2017.csv**
 		A spreadsheet (.csv) with information on the 25m-radius survey plots that served as the basis of field data collection.
 		
 **1.3.  snag-wlf_REFsnags_ipnf2017.csv
 		A spreadsheet (.csv) with information on the individual snags within survey plots, including spatial coordinates, structural features, and additional wildlife-relevant features.
 		
-**1.4.  snag-wlf_REFplots_topo-r25m.csv
+**1.4.  snag-wlf_REFplots_topo-r25m.csv**
 		A spreadsheet (.csv) including lidar-derived topographic metrics for each survey plot, averaged across the full 0.2ha plot, including elevation, slope, and transformed aspect (trasp).
 		
-**1.5.  snag-wlf_REFsnags-d05m_chars-Mx-clean.csv 
+**1.5.  snag-wlf_REFsnags-d05m_chars-Mx-clean.csv**
 		A spreadsheet (.csv) including all individual snags included in this study (n = 198). Information for each snag includes field-derived characteristics, as well as lidar-derived metrics (including standard, structural, and topographic). Lidar metrics were calculated from a 2.5m radius circle around snag central coordinates.
 		
-**1.6.  snag-wlf_rf-mod.rmd
+**1.6.  snag-wlf_rf-mod.rmd**
 		R markdown (.rmd) file containing all R scripts & packages used for analyses for this project, including lidar pre-processing, lidar metric calculations, and Random Forest (RF) modeling.
 
 2. Relationship between files, if important: 
@@ -80,7 +80,7 @@ Airborne lidar data acquisitions were flown for the USFS RMRS, and additional in
 4. Are there multiple versions of the dataset? No
 
 
-METHODOLOGICAL INFORMATION
+*METHODOLOGICAL INFORMATION*
 
 1. Description of methods used for collection/generation of data: 
 All methods used for collecting and generating data can be found in the associated publication linked to this dataset.
