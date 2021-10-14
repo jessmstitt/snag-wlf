@@ -1,7 +1,8 @@
 # snag-wlf
 
 **READ ME**
-**This repository contains the datasets and code for evaluating the use of lidar to discern snag characteristics important for wildlife: treetop intactness & DBH**
+
+**This repository contains the datasets and code for evaluating the use of lidar to discern snag characteristics important for wildlife: can we classify snags remotely by treetop intactness & DBH?**
 
 GENERAL INFORMATION
 
