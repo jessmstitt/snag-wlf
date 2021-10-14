@@ -50,14 +50,19 @@ DATA & FILE OVERVIEW
 1. File List: 
 1.1.  snag-wlf_README.xlsx 
 		A spreadsheet (.xlsx) describing all columns in each of the four (4) .csv files included with this project.
+		
 1.2.  snag-wlf_REFplots_ipnf2017.csv
 		A spreadsheet (.csv) with information on the 25m-radius survey plots that served as the basis of field data collection.
+		
 1.3.  snag-wlf_REFsnags_ipnf2017.csv
 		A spreadsheet (.csv) with information on the individual snags within survey plots, including spatial coordinates, structural features, and additional wildlife-relevant features.
+		
 1.4.  snag-wlf_REFplots_topo-r25m.csv
 		A spreadsheet (.csv) including lidar-derived topographic metrics for each survey plot, averaged across the full 0.2ha plot, including elevation, slope, and transformed aspect (trasp).
+		
 1.5.  snag-wlf_REFsnags-d05m_chars-Mx-clean.csv 
 		A spreadsheet (.csv) including all individual snags included in this study (n = 198). Information for each snag includes field-derived characteristics, as well as lidar-derived metrics (including standard, structural, and topographic). Lidar metrics were calculated from a 2.5m radius circle around snag central coordinates.
+		
 1.6.  snag-wlf_rf-mod.rmd
 		R markdown (.rmd) file containing all R scripts & packages used for analyses for this project, including lidar pre-processing, lidar metric calculations, and Random Forest (RF) modeling.
 
