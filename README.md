@@ -10,8 +10,8 @@
 “Data for: Evaluating the use of lidar to discern snag characteristics important for wildlife.” <In preparation for Remote Sensing, 2021>
 
 2. Corresponding Author Information		
-	Name: Jessica M. StittCorresponding author: Jess M. Stitt
-	Email: jessmstitt [at] gmail.com / js3585 [at] crssa.rutgers.edu
+NAME: Jess M. Stitt 
+EMAIL: jessmstitt [at] gmail.com / js3585 [at] crssa.rutgers.edu
 
 3. Date of data collection: 	
 Lidar data acquisition: 2016-10-12; Field data collection: 2017-06-01 through 2017-10-31
