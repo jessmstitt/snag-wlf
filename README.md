@@ -11,10 +11,9 @@
 
 2. Corresponding Author Information		
 	Name: Jessica M. Stitt
-	Institution: University of Idaho
-	Address: Department of Fish and Wildlife Sciences, 875 Perimeter Drive MS 1136, 
-			Moscow, ID, USA, 83844
-	Email: jstitt@uidaho.edu
+	Institution: University of Idaho <outdated, now Rutgers University>
+	Address: 
+	Email: js3585@crssa.rutgers.edu
 
 3. Date of data collection: 	
 Lidar data acquisition: 2016-10-12; Field data collection: 2017-06-01 through 2017-10-31
